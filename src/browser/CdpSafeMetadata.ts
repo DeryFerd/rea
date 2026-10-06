@@ -151,10 +151,13 @@ const cspHostSourceOrigin = (
   const scheme = (match?.[1] ?? schemeOf(baseUrl))?.toLowerCase();
   if (scheme === undefined || !/^[a-z][a-z0-9+.-]*$/u.test(scheme))
     return undefined;
-  if (authority.includes("*"))
-    return /^(?:\*|(?:\*\.)?[a-z0-9.-]+)(?::(?:\*|\d+))?$/iu.test(authority)
-      ? null
-      : undefined;
+  if (
+    !/^(?:\*|(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?)(?::(?:\*|\d+))?$/iu.test(
+      authority,
+    )
+  )
+    return undefined;
+  if (authority.includes("*")) return null;
   try {
     const parsed = new URL(`${scheme}://${authority}`);
     return parsed.username === "" &&
