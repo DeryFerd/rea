@@ -16,7 +16,7 @@ import {
 } from "../../support/applicationSessionFixture.js";
 
 import { projectAndroidApplicationEvidence } from "../../../src/application/android/AndroidApplicationService.js";
-import { runProviderAnalysis } from "../../../src/application/DirectAnalysis.js";
+import { runProviderAnalysis } from "../../../src/composition/directAnalysis.js";
 import { androidApplicationProjectionResultSchema } from "../../../src/domain/android/androidApplication.js";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 
@@ -97,6 +97,50 @@ describe("Android application projection", () => {
       ok: false,
       error: { _tag: "AnalysisInputError" },
     });
+  });
+
+  it("keeps uppercase path-derived bytecode families distinct from byte validity", async () => {
+    const root = await createTestTempDirectory("rea-android-suffixes-");
+    const path = join(root, "Suffixes.apk");
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    for (const entry of [
+      "classes.DEX",
+      "extra.dex",
+      "Main.CLASS",
+      "Other.class",
+    ])
+      await writer.add(entry, new TextReader("unrecognized bytes"));
+    await writeFile(path, await writer.close());
+
+    const inventory = parseEvidence(
+      await runProviderAnalysis(path, "inventory_artifact", {}),
+    );
+    const result = projectAndroidApplicationEvidence({
+      inventory_evidence: [inventory],
+    });
+    const projection = androidApplicationProjectionResultSchema.parse(
+      requireSuccessfulProjection(result).normalized_result,
+    );
+
+    expect(projection.components.dex.map(({ path }) => path).sort()).toEqual([
+      "classes.DEX",
+      "extra.dex",
+    ]);
+    expect(
+      projection.components.jvm_classes.map(({ path }) => path).sort(),
+    ).toEqual(["Main.CLASS", "Other.class"]);
+    expect(
+      projection.components.dex.every(({ format }) => format === "file"),
+    ).toBe(true);
+    expect(
+      projection.components.jvm_classes.every(
+        ({ format }) => format === "file",
+      ),
+    ).toBe(true);
+    expect(projection.runtime_families).toEqual(["dalvik-art", "java-kotlin"]);
+    expect(projection.limitations).toContain(
+      "Runtime families are inferred from inventory formats and paths; filename suffixes do not establish valid DEX or JVM class bytes.",
+    );
   });
 
   it("returns every component and bridge candidate from the inventory", async () => {

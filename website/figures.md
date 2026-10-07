@@ -1,9 +1,18 @@
 # REA website figures
 
+> A good website is like a good paper: easy to follow, clear and concise, with a clean, refined presentation.
+>
+> — N0zoM1z0
+
+Use [style-guide.md](style-guide.md#make-figures-explain-a-relationship) when adding
+or revising a figure. The prompts below are historical layout references; use
+the current SVG source for published labels.
+
 The published diagrams are SVG source assets:
 
 - `public/assets/figures/rea-investigation-flow.svg` — 1774 × 887 viewBox.
 - `public/assets/figures/dx-ball-sound-pan-investigation.svg` — 1774 × 887 viewBox.
+- `public/assets/figures/th04-bullet-ring.svg` — 1000 × 520 viewBox.
 
 Two original layout references were generated with the built-in image generation
 tool and reviewed visually. Their prompts are retained below. The final SVGs
@@ -17,6 +26,14 @@ follow-up work. The DX-Ball figure shows the ordered input/arithmetic evidence,
 the maintained C and separate execution/compiler checks. Recorded tool requests,
 instruction excerpts and decoded byte reads appear as HTML text in the case
 study; source reconstruction is the agent's work informed by REA results.
+
+## TH04 figure
+
+The TH04 figure is drawn directly as SVG from the byte-angle formula. It uses
+16 bullets, zero template rotation and illustrative player direction 40, with
+clockwise screen coordinates. The HTML overview separates REA's original-code
+inspection from the reconstruction project's C++ and compiler replay. No
+image generation or game screenshot is used for this mathematical figure.
 
 ## Review
 
