@@ -21,6 +21,9 @@ import { createServer } from "../../../src/server/createServer.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { silentLogger } from "../../../src/logger.js";
 import { createAnalysisProfile } from "../../../src/domain/analysisProfile.js";
+import { MAX_JSON_DEPTH } from "../../../src/domain/jsonValue.js";
+import type { BinaryTarget } from "../../../src/domain/binaryTarget.js";
+import { createEvidence } from "../../../src/domain/evidence.js";
 import { ok as resultOk } from "../../../src/domain/result.js";
 import {
   createSessionMcpHarness,
@@ -257,6 +260,47 @@ describe("session filesystem path boundaries over MCP", () => {
     expect(closed.isError, JSON.stringify(closed.content)).toBe(true);
     expect(JSON.stringify(closed.content)).toContain("absolute");
     await mcp.callTool({ name: "close_binary", arguments: {} });
+  }, 10_000);
+});
+
+describe("json depth bounds over MCP", () => {
+  it("classifies deeply nested evidence parameters as an input validation error", async () => {
+    directory = await createTestTempDirectory("rea-mcp-depth-bound-");
+    const { mcp } = await createSessionMcpHarness(
+      directory,
+      provider,
+      resources,
+    );
+    const target: BinaryTarget = {
+      path: "/tmp/fixture",
+      sha256: "a".repeat(64),
+      kind: "executable",
+      format: "mach-o",
+      architecture: "arm64",
+      availableArchitectures: ["arm64"],
+    };
+    const captureEvidence = createEvidence(
+      target,
+      { id: "fixture", name: "Fixture", version: "1" },
+      { operation: "capture_process_scenario", parameters: {}, result: true },
+    );
+    let value: unknown = 1;
+    for (let index = 0; index <= MAX_JSON_DEPTH; index += 1)
+      value = { nested: value };
+    const result = await mcp.callTool({
+      name: "compare_process_captures",
+      arguments: {
+        left: {
+          ...captureEvidence,
+          parameters: { attack: value },
+        },
+        right: captureEvidence,
+      },
+    });
+    const text = JSON.stringify(result.content);
+    expect(result.isError, text).toBe(true);
+    expect(text).toContain("Input validation");
+    expect(text).toContain("maximum nesting depth");
   }, 10_000);
 });
 
