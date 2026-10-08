@@ -63,11 +63,6 @@ const nativeUiScreenshotSchema = z
     base64: z
       .string()
       .min(4)
-      // Mirrors NATIVE_UI_OUTPUT_BUDGET_BYTES in src/native/NativeUiOutputBudget.ts:
-      // the helper cannot legitimately return more than this in one capture.
-      .max(64 * 1024 * 1024, {
-        message: "Screenshot base64 exceeds the 64 MiB output budget",
-      })
       .describe(
         "Canonical base64 encoding of PNG bytes; the decoded bytes must have a PNG signature and IHDR chunk.",
       ),

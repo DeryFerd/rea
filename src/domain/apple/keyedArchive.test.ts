@@ -4,10 +4,10 @@ import { z } from "zod";
 import { MAX_JSON_DEPTH } from "../jsonValue.js";
 import { projectKeyedArchive } from "./keyedArchive.js";
 
-const deepValue = (depth: number): Record<string, unknown> => {
+const deepValue = (depth: number): unknown => {
   let value: unknown = 1;
   for (let index = 0; index < depth; index += 1) value = { nested: value };
-  return value as Record<string, unknown>;
+  return value;
 };
 
 describe("projectKeyedArchive input bound", () => {

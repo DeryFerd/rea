@@ -22,8 +22,7 @@ import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { silentLogger } from "../../../src/logger.js";
 import { createAnalysisProfile } from "../../../src/domain/analysisProfile.js";
 import { MAX_JSON_DEPTH } from "../../../src/domain/jsonValue.js";
-import type { BinaryTarget } from "../../../src/domain/binaryTarget.js";
-import { createEvidence } from "../../../src/domain/evidence.js";
+import { INVESTIGATION_EXAMPLES } from "../../../src/contracts/investigationExamples.js";
 import { ok as resultOk } from "../../../src/domain/result.js";
 import {
   createSessionMcpHarness,
@@ -271,19 +270,12 @@ describe("json depth bounds over MCP", () => {
       provider,
       resources,
     );
-    const target: BinaryTarget = {
-      path: "/tmp/fixture",
-      sha256: "a".repeat(64),
-      kind: "executable",
-      format: "mach-o",
-      architecture: "arm64",
-      availableArchitectures: ["arm64"],
-    };
-    const captureEvidence = createEvidence(
-      target,
-      { id: "fixture", name: "Fixture", version: "1" },
-      { operation: "capture_process_scenario", parameters: {}, result: true },
-    );
+    const input = INVESTIGATION_EXAMPLES.compare_process_captures.input;
+    const baseline = await mcp.callTool({
+      name: "compare_process_captures",
+      arguments: input,
+    });
+    expect(baseline.isError, JSON.stringify(baseline)).not.toBe(true);
     let value: unknown = 1;
     for (let index = 0; index <= MAX_JSON_DEPTH; index += 1)
       value = { nested: value };
@@ -291,10 +283,10 @@ describe("json depth bounds over MCP", () => {
       name: "compare_process_captures",
       arguments: {
         left: {
-          ...captureEvidence,
+          ...input.left,
           parameters: { attack: value },
         },
-        right: captureEvidence,
+        right: input.right,
       },
     });
     const text = JSON.stringify(result.content);

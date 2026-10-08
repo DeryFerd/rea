@@ -13,16 +13,6 @@ export const webTextArtifactSchema = z
   })
   .superRefine((artifact, context) => {
     const bytes = Buffer.byteLength(artifact.text);
-    // Matches the 16 MiB source budget the web capture and module-trace tooling
-    // already advertises, so refusal lines up with the supported source size.
-    if (bytes > 16 * 1024 * 1024) {
-      context.addIssue({
-        code: "custom",
-        path: ["text"],
-        message: "Text exceeds the 16 MiB source budget",
-      });
-      return;
-    }
     const digest = createHash("sha256").update(artifact.text).digest("hex");
     if (artifact.bytes !== bytes)
       context.addIssue({
