@@ -11,6 +11,9 @@ import {
 } from "./ArtifactReader.js";
 import type { ZipPackageFormat } from "../domain/zipPackageFormat.js";
 
+/** Largest uncompressed ZIP entry this reader will extract; matches the per-document decode budget used by sibling artifact readers. */
+const MAX_ENTRY_BYTES = 64 * 1024 * 1024;
+
 class NodeFileReader extends Reader<string> {
   #handle: FileHandle | undefined;
 
@@ -92,6 +95,13 @@ export class ZipArtifactReader implements ArtifactReader {
         new ArtifactReaderFailure(
           "unavailable",
           "Encrypted ZIP entry is unsupported",
+        ),
+      );
+    if (stored.uncompressedSize > MAX_ENTRY_BYTES)
+      return Promise.reject(
+        new ArtifactReaderFailure(
+          "limit",
+          `ZIP entry exceeds the 64 MiB per-entry limit: ${stored.filename}`,
         ),
       );
     return Promise.resolve(extractStream(stored, signal));
