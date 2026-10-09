@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { elf, thinMach } from "../domain/binaryTarget.fixture.js";
+import { elf, fat, thinMach } from "../domain/binaryTarget.fixture.js";
 import { projectGhidraDoctorInspection } from "./GhidraDoctor.js";
 import {
   ghidraJavaEnvironment,
@@ -509,6 +509,61 @@ describe("Ghidra configuration paths", () => {
     expect(result.checks).toContainEqual(
       expect.objectContaining({ name: "configuration", status: "passed" }),
     );
+  });
+});
+
+describe("Ghidra FAT native decompiler admission", () => {
+  it.each([
+    {
+      name: "foreign-only FAT",
+      bytes: fat([0x01000007]),
+      status: "unavailable",
+      detail: "requires mach-o arm64",
+    },
+    {
+      name: "matching universal FAT",
+      bytes: fat([0x01000007, 0x0100000c]),
+      status: "available",
+      detail: "matches darwin/arm64",
+    },
+    {
+      name: "truncated FAT table",
+      bytes: fat([0x01000007], 2),
+      status: "available",
+      detail: "could not be established",
+    },
+  ])("distinguishes $name", ({ bytes, status, detail }) => {
+    const result = inspectGhidraInstallation(
+      {
+        environment: {},
+        installDir: INSTALL,
+        platform: "darwin",
+        architecture: "arm64",
+      },
+      host({ executableHeader: () => ({ bytes, size: bytes.length }) }),
+    );
+    expect(result.status).toBe(status);
+    expect(
+      result.checks.find(({ name }) => name === "native_decompiler")?.detail,
+    ).toContain(detail);
+  });
+
+  it("keeps a truncated host slice unknown despite a readable foreign slice", () => {
+    const bytes = fat([0x01000007, 0x0100000c]);
+    bytes.writeUInt32BE(bytes.length + 1, 8 + 20 + 12);
+    const result = inspectGhidraInstallation(
+      {
+        environment: {},
+        installDir: INSTALL,
+        platform: "darwin",
+        architecture: "arm64",
+      },
+      host({ executableHeader: () => ({ bytes, size: bytes.length }) }),
+    );
+    expect(result.status).toBe("available");
+    expect(
+      result.checks.find(({ name }) => name === "native_decompiler")?.detail,
+    ).toContain("could not be established");
   });
 });
 

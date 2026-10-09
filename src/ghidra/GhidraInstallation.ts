@@ -8,6 +8,7 @@ import {
   openSync,
   readFileSync,
   readSync,
+  statSync,
 } from "node:fs";
 import { posix, win32 } from "node:path";
 
@@ -56,16 +57,17 @@ const NATIVE_TOOL_FORMATS: Readonly<
 };
 
 /** Node architecture identifiers as the executable-header parser reports them. */
-const NODE_ARCHITECTURES: Readonly<
-  Partial<Record<NodeJS.Architecture, BinaryArchitecture>>
-> = {
-  x64: "x86_64",
-  ia32: "x86",
-  arm: "arm",
-  arm64: "arm64",
-};
+const NATIVE_ARCHITECTURES: readonly {
+  readonly node: NodeJS.Architecture;
+  readonly binary: BinaryArchitecture;
+}[] = [
+  { node: "x64", binary: "x86_64" },
+  { node: "ia32", binary: "x86" },
+  { node: "arm", binary: "arm" },
+  { node: "arm64", binary: "arm64" },
+];
 
-/** One bounded read covers every supported executable header. */
+/** Bound installation discovery reads; larger headers remain unknown. */
 const EXECUTABLE_HEADER_PROBE_BYTES = 4096;
 
 /** Compatibility of one present native decompiler with the inspected host. */
@@ -93,16 +95,34 @@ const assessNativeDecompiler = (
   probe: GhidraExecutableHeaderProbe | undefined,
 ): NativeDecompilerCompatibility => {
   const expectedFormat = NATIVE_TOOL_FORMATS[platform];
-  const expectedArchitecture = NODE_ARCHITECTURES[architecture];
+  const expectedArchitecture = NATIVE_ARCHITECTURES.find(
+    ({ node }) => node === architecture,
+  )?.binary;
   if (expectedFormat === undefined || expectedArchitecture === undefined)
     return {
       status: "unknown",
       detail: `${path} is executable, but no native tool format is defined for ${platform}/${architecture}`,
     };
-  const parsed =
+  let parsed =
     probe === undefined
       ? undefined
       : parseExecutableHeader(probe.bytes, architecture, probe.size);
+  if (probe !== undefined && parsed !== undefined && !parsed.ok) {
+    // FAT parsing selects a host slice. A validated foreign slice can still
+    // prove that its complete architecture table excludes this host. If the
+    // host is listed but its slice is malformed, preserve the unknown outcome.
+    for (const { node } of NATIVE_ARCHITECTURES) {
+      if (node === architecture) continue;
+      const alternative = parseExecutableHeader(probe.bytes, node, probe.size);
+      if (
+        alternative.ok &&
+        !alternative.value.availableArchitectures.includes(expectedArchitecture)
+      ) {
+        parsed = alternative;
+        break;
+      }
+    }
+  }
   if (parsed === undefined || !parsed.ok)
     return {
       status: "unknown",
@@ -209,7 +229,7 @@ export interface GhidraJavaObservation {
 
 /** A bounded executable-header probe: a small prefix plus the whole file size. */
 export interface GhidraExecutableHeaderProbe {
-  /** Enough leading bytes for every supported executable header. */
+  /** A bounded prefix; a larger or unreadable header remains unknown. */
   readonly bytes: Buffer;
   /** Whole-file size, since header commitments are checked against it, not the prefix. */
   readonly size: number;
@@ -569,7 +589,7 @@ const installationCheck = (options: {
         remediation: options.remediation,
       };
 
-/** Admit the native decompiler only when it is absent or built for this host. */
+/** Require a present native decompiler without positively incompatible bytes. */
 const nativeDecompilerCheck = ({
   coordinates,
   platform,
@@ -677,10 +697,15 @@ const systemGhidraInstallationHost = (): GhidraInstallationHost => ({
   executableHeader(path) {
     let handle: number | undefined;
     try {
-      handle = openSync(path, "r");
+      handle = openSync(
+        path,
+        constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOCTTY,
+      );
+      const metadata = fstatSync(handle);
+      if (!metadata.isFile()) return undefined;
       const bytes = Buffer.alloc(EXECUTABLE_HEADER_PROBE_BYTES);
       const read = readSync(handle, bytes, 0, bytes.length, 0);
-      return { bytes: bytes.subarray(0, read), size: fstatSync(handle).size };
+      return { bytes: bytes.subarray(0, read), size: metadata.size };
     } catch (cause: unknown) {
       // best-effort cleanup: a header that cannot be read stays unknown.
       void cause;
@@ -692,7 +717,7 @@ const systemGhidraInstallationHost = (): GhidraInstallationHost => ({
   executable(path) {
     try {
       accessSync(path, constants.X_OK);
-      return true;
+      return statSync(path).isFile();
     } catch (cause: unknown) {
       // best-effort cleanup: optional executable probing; failure means missing.
       void cause;
