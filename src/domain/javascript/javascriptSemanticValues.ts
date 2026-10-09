@@ -20,6 +20,7 @@ import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import {
   readExactJavaScriptLiteral,
   semanticStaticPropertyKey,
+  unwrapJavaScriptExpression,
 } from "./javascriptAstValues.js";
 import {
   semanticAmbiguousProvenance,
@@ -170,8 +171,23 @@ const evaluateExpression = (
 ): JavaScriptSemanticValue => {
   if (context.expressionDepth > SEMANTIC_EXPRESSION_DEPTH_LIMIT)
     return semanticResourceLimitUnknown("expression-depth");
+  const unwrapped = unwrapJavaScriptExpression(node);
+  if (unwrapped.depth > 0) {
+    if (
+      context.expressionDepth + unwrapped.depth >
+      SEMANTIC_EXPRESSION_DEPTH_LIMIT
+    )
+      return semanticResourceLimitUnknown("expression-depth");
+    return evaluateExpression(unwrapped.node, {
+      ...context,
+      expressionDepth: context.expressionDepth + unwrapped.depth,
+    });
+  }
   const literal = readExactJavaScriptLiteral(node);
-  if (literal.found) return { status: "literal", value: literal.value };
+  if (literal.found)
+    return typeof literal.value === "number"
+      ? primitiveSet([literal.value])
+      : { status: "literal", value: literal.value };
   if (t.isIdentifier(node)) {
     const binding = resolveSemanticBindingState(context.state, node, node.name);
     return binding === undefined
@@ -196,13 +212,6 @@ const evaluateExpression = (
   if (t.isBinaryExpression(node, { operator: "+" }))
     return evaluateAddition(node, context);
   if (t.isUnaryExpression(node)) return evaluateUnary(node, context);
-  if (
-    (t.isTSAsExpression(node) ||
-      t.isTSTypeAssertion(node) ||
-      t.isTSNonNullExpression(node)) &&
-    t.isExpression(node.expression)
-  )
-    return evaluateExpression(node.expression, nestedContext(context));
   return { status: "unknown", reason: `Unsupported ${node.type} value.` };
 };
 
@@ -527,6 +536,21 @@ const provenanceForExpression = (
       "unknown",
       semanticResourceLimitReason("expression-depth"),
     );
+  const unwrapped = unwrapJavaScriptExpression(node);
+  if (unwrapped.depth > 0) {
+    if (
+      context.expressionDepth + unwrapped.depth >
+      SEMANTIC_EXPRESSION_DEPTH_LIMIT
+    )
+      return semanticUnresolvedProvenance(
+        "unknown",
+        semanticResourceLimitReason("expression-depth"),
+      );
+    return provenanceForExpression(unwrapped.node, {
+      ...context,
+      expressionDepth: context.expressionDepth + unwrapped.depth,
+    });
+  }
   const required = semanticRequireOrigin(node, context.state);
   if (required !== undefined) return semanticOriginsProvenance([required]);
   if (t.isIdentifier(node)) {
@@ -580,11 +604,20 @@ const provenanceForExpression = (
       provenanceForExpression(left, nestedContext(context)),
       provenanceForExpression(right, nestedContext(context)),
     ];
-    const origins = candidates.flatMap((candidate) => candidate.origins);
+    const origins = uniqueSemanticOrigins(
+      candidates.flatMap((candidate) => candidate.origins),
+    );
+    const allModuleOrigins = candidates.every(
+      ({ status }) => status === "module",
+    );
+    if (allModuleOrigins && origins.length === 1)
+      return semanticOriginsProvenance(origins);
     return origins.length > 0
       ? semanticAmbiguousProvenance(
-          uniqueSemanticOrigins(origins),
-          "Multiple module origins.",
+          origins,
+          allModuleOrigins
+            ? "Multiple module origins."
+            : "Conditional provenance includes a non-module alternative.",
         )
       : semanticUnresolvedProvenance(
           "unknown",

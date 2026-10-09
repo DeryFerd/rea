@@ -23,6 +23,15 @@ artifact digest and structural graph ID. Semantic tracing requires the semantic
 relation graph and reports when it is unavailable rather than treating missing
 data as an empty graph.
 
+The semantic graph wire format stores shared non-location provenance once in
+its required `evidence_contexts` table. Each node, relation, fingerprint, and
+unknown retains its exact `evidence.location` and names the owning context with
+`evidence.context_id`. This is a breaking representation change: consumers
+reading fields such as `evidence.authority` must look up the context by ID and
+combine its fields with the fact's location. Semantic trace results include the
+canonical context subset referenced by their returned facts, so those facts
+remain self-contained in the response.
+
 ## Feature tracing
 
 Select one literal seed kind: node ID, route, string, API, IPC channel, module,
@@ -174,6 +183,10 @@ or process workflows.
 All five CLI commands accept inline JSON or a path to a JSON file. The CLI
 returns an Evidence record directly. Put the full records in a later CLI input;
 a separate CLI process has no retained MCP connection state.
+
+File inputs must be regular files; symlinks to regular files are accepted.
+Directories, named pipes and device files produce an input error before JSON
+parsing.
 
 For a literal string trace, analyze your supplied tree once, then build the
 input from the saved Evidence (replace the target and seed):
