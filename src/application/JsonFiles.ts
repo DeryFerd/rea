@@ -1,3 +1,4 @@
+import { constants } from "node:buffer";
 import {
   link,
   lstat,
@@ -16,9 +17,19 @@ import {
   AnalysisResourceConstraintError,
 } from "../domain/analysisErrorCore.js";
 import { err, ok, type Result } from "../domain/result.js";
-import { parseUtf8Json } from "./Utf8JsonInput.js";
-import { readRegularFile } from "./RegularFileRead.js";
+import {
+  JSON_INPUT_RESOURCE_REMEDIATION,
+  parseUtf8Json,
+} from "./Utf8JsonInput.js";
+import { withRegularFile } from "./RegularFileRead.js";
 import { NonRegularFileReadError } from "../filesystem/RegularFile.js";
+
+/**
+ * UTF-8's smallest ratio is one UTF-16 code unit per three bytes (3-byte BMP
+ * sequences), so a larger input cannot decode within MAX_STRING_LENGTH no
+ * matter its content; refusing on that bound never rejects decodable bytes.
+ */
+const MAX_DECODABLE_JSON_INPUT_BYTES = 3 * constants.MAX_STRING_LENGTH;
 
 /** Request control and its owning operation for an interruptible atomic write. */
 export interface TextWriteCancellation {
@@ -37,7 +48,26 @@ export const readJsonFile = async (
 > => {
   const requestedPath = resolve(path);
   try {
-    const encoded = await readRegularFile(requestedPath);
+    const encoded = await withRegularFile(
+      requestedPath,
+      async (handle, stats) => {
+        if (stats.size > MAX_DECODABLE_JSON_INPUT_BYTES)
+          throw new AnalysisResourceConstraintError(
+            "read_evidence_file",
+            "memory",
+            "JSON input bytes cannot decode within the runtime's maximum string length",
+            {
+              boundary: "json-input",
+              input_path: requestedPath,
+              input_bytes: stats.size,
+              max_string_code_units: constants.MAX_STRING_LENGTH,
+              max_decodable_input_bytes: MAX_DECODABLE_JSON_INPUT_BYTES,
+            },
+            { remediationAction: JSON_INPUT_RESOURCE_REMEDIATION },
+          );
+        return handle.readFile();
+      },
+    );
     const decoded = parseUtf8Json(encoded, "read_evidence_file", requestedPath);
     if (!decoded.ok) {
       return err(
