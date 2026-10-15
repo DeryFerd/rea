@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAmStartOutput } from "./AdbShellOutput.js";
+import {
+  parseAmStartOutput,
+  parseDumpsysPackageOutput,
+} from "./AdbShellOutput.js";
 
 const starting =
   "Starting: Intent { act=android.intent.action.MAIN cmp=com.example/.Main }";
@@ -71,5 +74,26 @@ describe("parseAmStartOutput", () => {
       startedActivity: null,
       reportedStatus: "ok",
     });
+  });
+});
+
+describe("parseDumpsysPackageOutput installer", () => {
+  const packageDump = (installer: string): string =>
+    `Packages:\n  Package [com.example] (abcdef):\n    versionName=1.2.3\n    installerPackageName=${installer}\n`;
+
+  it("reports the device's literal installerPackageName=null as absent", () => {
+    expect(
+      parseDumpsysPackageOutput(packageDump("null")).installerPackageName,
+    ).toBeNull();
+  });
+
+  it("keeps a named installer and an empty value as before", () => {
+    expect(
+      parseDumpsysPackageOutput(packageDump("com.android.vending"))
+        .installerPackageName,
+    ).toBe("com.android.vending");
+    expect(
+      parseDumpsysPackageOutput(packageDump("")).installerPackageName,
+    ).toBeNull();
   });
 });

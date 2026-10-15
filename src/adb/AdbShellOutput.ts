@@ -263,7 +263,10 @@ export const parseDumpsysPackageOutput = (
       key === "installerPackageName" &&
       details.installerPackageName === null
     )
-      details.installerPackageName = value === "" ? null : value;
+      // Android prints the literal string `null` for an absent installer, the
+      // same device-side convention `parseSettingsGetOutput` already maps.
+      details.installerPackageName =
+        value === "" || value === "null" ? null : value;
     else if (key === "userId" && details.userId === null) {
       const parsed = /^(\d+)/u.exec(value);
       if (parsed !== null) details.userId = Number(parsed[1]!);
