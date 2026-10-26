@@ -1,3 +1,4 @@
+import { normalizeHttpHostname } from "../../domain/httpHostname.js";
 import { PRODUCT_IDENTITY } from "../../identity.js";
 import { PACKAGE_METADATA } from "../../generatedPackageMetadata.js";
 import type { AnalysisError } from "../../domain/analysisErrorBase.js";
@@ -28,15 +29,15 @@ export const BUNDLE_TARBALL_NAME = "rea-agents.tgz";
 
 /** Folder and env id rule: a kebab-case label the agentenv framework accepts as a local id. */
 const BUNDLE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-const BUNDLE_NAME_MAX_LENGTH = 64;
+// A compose service name is one DNS label, whose wire limit is 63 octets.
+const BUNDLE_NAME_MAX_LENGTH = 63;
+export const BUNDLE_NAME_CONSTRAINT = `a kebab-case label of at most ${String(BUNDLE_NAME_MAX_LENGTH)} characters, excluding Windows device names, that remains unchanged as an HTTP service hostname`;
 /** Win32 reserves these device names for files and folders, so the env folder can never take one. */
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/u;
 
 /** Whether a name can be the env folder and env id: the checks the export applies. */
 export const isPortableBundleName = (name: string): boolean =>
-  BUNDLE_NAME.test(name) &&
-  name.length <= BUNDLE_NAME_MAX_LENGTH &&
-  !WINDOWS_RESERVED_NAME.test(name);
+  validateBundleName(name).ok;
 
 /** Where the Dockerfile installs the CLI from. */
 export type EnvironmentPackageSource =
@@ -122,6 +123,33 @@ const reservedNameError = (name: string): AnalysisInputError =>
       },
     ],
   );
+
+/** One owner admits the same folder, environment id and HTTP service hostname. */
+const validateBundleName = (
+  name: string,
+): Result<string, AnalysisInputError> => {
+  if (!BUNDLE_NAME.test(name) || name.length > BUNDLE_NAME_MAX_LENGTH)
+    return err(nameError(name));
+  if (WINDOWS_RESERVED_NAME.test(name)) return err(reservedNameError(name));
+  if (normalizeHttpHostname(name) !== name)
+    return err(
+      new AnalysisInputError(
+        ENVIRONMENT_EXPORT_OPERATION,
+        {
+          userMessage: `The bundle name ${JSON.stringify(name)} cannot be used unchanged as an HTTP host name. Choose a name such as replay-1.`,
+        },
+        [
+          {
+            path: ["name"],
+            reason: "invalid_value",
+            message:
+              "The service name must remain a hostname rather than be rejected or interpreted as an IP address.",
+          },
+        ],
+      ),
+    );
+  return ok(name);
+};
 
 const installLine = (source: EnvironmentPackageSource): string =>
   source.kind === "registry"
@@ -342,9 +370,8 @@ export const planEnvironmentBundle = (
   options: EnvironmentBundleOptions,
 ): Result<EnvironmentBundlePlan, AnalysisError> => {
   const name = options.name ?? source.manifest.name;
-  if (!BUNDLE_NAME.test(name) || name.length > BUNDLE_NAME_MAX_LENGTH)
-    return err(nameError(name));
-  if (WINDOWS_RESERVED_NAME.test(name)) return err(reservedNameError(name));
+  const admitted = validateBundleName(name);
+  if (!admitted.ok) return admitted;
   // Prepared only after the name checks, under the name the bundle's server serves.
   const { state, report } = options.served(name);
   // The catalog and answers the bundle's server will have, so the verifier and README predict them.

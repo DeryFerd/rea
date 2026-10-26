@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
-  mcpHttpHostnameSchema,
-  type McpHttpHostname,
-} from "./mcpHttpHostname.js";
+  httpHostnameSchema,
+  type HttpHostname,
+} from "../domain/httpHostname.js";
 
 import {
   ConfigurationError,
@@ -50,7 +50,7 @@ export const mcpAllowedHostsTextSchema = z
     }
     return entries;
   })
-  .pipe(z.array(mcpHttpHostnameSchema))
+  .pipe(z.array(httpHostnameSchema))
   .transform((names) => [...new Set(names)]);
 
 /** Where the streamable HTTP listener binds. */
@@ -58,7 +58,7 @@ export interface McpHttpEndpoint {
   readonly host: string;
   readonly port: number;
   /** Operator-declared Host/Origin names; required before a non-loopback bind serves. */
-  readonly allowedHosts?: readonly McpHttpHostname[];
+  readonly allowedHosts?: readonly HttpHostname[];
 }
 
 /** Resolve the endpoint: explicit values, then MCP_HOST/MCP_PORT, then loopback defaults. */

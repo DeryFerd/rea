@@ -1,4 +1,4 @@
-import type { McpHttpHostname } from "../../config/mcpHttpHostname.js";
+import type { HttpHostname } from "../../domain/httpHostname.js";
 import { STATE_INTAKE_LIMIT_BYTES } from "../../application/environment/environmentStateDocument.js";
 import {
   DEFAULT_MAX_REQUEST_BODY_SIZE,
@@ -428,7 +428,7 @@ export interface ServeEnvironmentOptions {
   readonly host: string;
   readonly port: number;
   /** Operator-declared Host/Origin names; a non-loopback bind refuses to serve without them. */
-  readonly allowedHosts?: readonly McpHttpHostname[];
+  readonly allowedHosts?: readonly HttpHostname[];
   readonly signal?: AbortSignal;
   /** Served name; defaults to the manifest's environment name. */
   readonly environmentName?: string;

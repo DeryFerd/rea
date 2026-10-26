@@ -19,9 +19,9 @@ import {
 import { isIPv4, type AddressInfo } from "node:net";
 import type { Logger } from "pino";
 import {
-  normalizeMcpHttpHostname,
-  type McpHttpHostname,
-} from "../../config/mcpHttpHostname.js";
+  normalizeHttpHostname,
+  type HttpHostname,
+} from "../../domain/httpHostname.js";
 
 import {
   toWebRequest,
@@ -55,7 +55,7 @@ export interface ServeStreamableHttpOptions {
   readonly host: string;
   readonly port: number;
   /** Operator-declared Host/Origin names; a non-loopback bind refuses to serve without them. */
-  readonly allowedHosts?: readonly McpHttpHostname[];
+  readonly allowedHosts?: readonly HttpHostname[];
   /** Cancellation during listener startup; later shutdown remains owned by close(). */
   readonly signal?: AbortSignal;
   /** Called once; the instance serves every session in turn on a fresh transport. */
@@ -101,9 +101,9 @@ export const hostHeaderAllowlist = (
   host: string,
   boundAddress: string,
 ): string[] | undefined => {
-  const bound = normalizeMcpHttpHostname(boundAddress);
+  const bound = normalizeHttpHostname(boundAddress);
   if (bound === undefined || !isLoopbackAddress(bound)) return undefined;
-  const names = [normalizeMcpHttpHostname(host), bound];
+  const names = [normalizeHttpHostname(host), bound];
   const known = names.filter((name): name is string => name !== undefined);
   return [...new Set([...localhostAllowedHostnames(), ...known])];
 };

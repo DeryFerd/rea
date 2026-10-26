@@ -2,7 +2,7 @@ import { isIPv6 } from "node:net";
 import { z } from "zod";
 
 /** Parse a complete hostname/IP, never URL components, into the SDK's hostname identity. */
-export const normalizeMcpHttpHostname = (host: string): string | undefined => {
+export const normalizeHttpHostname = (host: string): string | undefined => {
   const unbracketed =
     host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
   const ipv6 = isIPv6(unbracketed);
@@ -19,11 +19,11 @@ export const normalizeMcpHttpHostname = (host: string): string | undefined => {
   }
 };
 
-/** Only the configuration owner may produce names admitted to the Host/Origin allowlist. */
-export const mcpHttpHostnameSchema = z
+/** Canonical HTTP hostname identity, parsed before consumers use it for lookup or matching. */
+export const httpHostnameSchema = z
   .string()
   .transform((source, context) => {
-    const hostname = normalizeMcpHttpHostname(source);
+    const hostname = normalizeHttpHostname(source);
     if (hostname !== undefined) return hostname;
     context.addIssue({
       code: "custom",
@@ -32,6 +32,6 @@ export const mcpHttpHostnameSchema = z
     });
     return z.NEVER;
   })
-  .brand<"McpHttpHostname">();
+  .brand<"HttpHostname">();
 
-export type McpHttpHostname = z.infer<typeof mcpHttpHostnameSchema>;
+export type HttpHostname = z.infer<typeof httpHostnameSchema>;
