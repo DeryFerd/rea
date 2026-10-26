@@ -1,4 +1,5 @@
 import { Help, z } from "incur";
+import type { McpHttpHostname } from "../config/mcpHttpHostname.js";
 
 import {
   MCP_ALLOWED_HOSTS_FLAG_CONSTRAINT,
@@ -60,7 +61,7 @@ export type McpHttpArguments =
       readonly ok: true;
       readonly host?: string;
       readonly port?: number;
-      readonly allowedHosts?: readonly string[];
+      readonly allowedHosts?: readonly McpHttpHostname[];
     }
   | { readonly ok: false; readonly help: true }
   | { readonly ok: false; readonly help: false; readonly message: string };

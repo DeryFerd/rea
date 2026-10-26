@@ -20,6 +20,7 @@ import {
   type StreamableHttpServer,
 } from "./serveStreamableHttp.js";
 import { StreamableHttpListenError } from "./streamableHttpListenError.js";
+import { mcpAllowedHostsTextSchema } from "../../config/mcpHttpEndpoint.js";
 import { RequestTrackingMcpServer } from "../RequestTrackingMcpServer.js";
 
 const servers: StreamableHttpServer[] = [];
@@ -312,19 +313,43 @@ it("refuses a non-loopback bind without an operator host allowlist as a typed li
   });
 });
 
-it("refuses a non-loopback bind whose allowlist names an invalid host", async () => {
-  const refused = start({
+it.each([
+  ["REA.LAN", "rea.lan"],
+  ["rea.lan.", "rea.lan."],
+  ["bücher.example", "xn--bcher-kva.example"],
+  ["127.0.0.1", "127.0.0.1"],
+  ["::1", "[::1]"],
+  ["0:0:0:0:0:0:0:1", "[::1]"],
+  ["[0:0:0:0:0:0:0:1]", "[::1]"],
+])("preserves declared hostname %j as %j", async (name, normalized) => {
+  const { served } = await start({
     host: "0.0.0.0",
-    allowedHosts: ["rea.lan", "not a host"],
+    allowedHosts: mcpAllowedHostsTextSchema.parse(name),
+    routes: [
+      {
+        method: "GET",
+        path: "/probe",
+        handle: () => Response.json({ allowed: true }),
+      },
+    ],
   });
-  await expect(refused).rejects.toBeInstanceOf(StreamableHttpListenError);
-  await expect(refused).rejects.toThrow(/not a host/u);
+  const url = new URL(served.url);
+  url.hostname = "127.0.0.1";
+  url.pathname = "/probe";
+  const response = await rawHttpRequest(url, {
+    headers: {
+      host: `${normalized}:${url.port}`,
+      origin: `http://${normalized}:${url.port}`,
+    },
+  });
+  expect(response.status).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({ allowed: true });
 });
 
 it("gates a non-loopback bind on the operator allowlist", async () => {
   const { served } = await start({
     host: "0.0.0.0",
-    allowedHosts: ["127.0.0.1"],
+    allowedHosts: mcpAllowedHostsTextSchema.parse("127.0.0.1"),
   });
   const url = new URL(served.url);
   url.hostname = "127.0.0.1";

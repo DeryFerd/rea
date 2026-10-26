@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  mcpHttpHostnameSchema,
+  type McpHttpHostname,
+} from "./mcpHttpHostname.js";
 
 import {
   ConfigurationError,
@@ -28,9 +32,9 @@ export const MCP_HTTP_PORT_CONSTRAINT =
 export const MCP_HTTP_HOST_CONSTRAINT =
   "MCP_HOST must be a non-empty host name or IP address.";
 export const MCP_ALLOWED_HOSTS_CONSTRAINT =
-  "MCP_ALLOWED_HOSTS must list at least one non-empty host name or IP address, separated by commas.";
+  "MCP_ALLOWED_HOSTS must list at least one host name or IP address, separated by commas, without URL components or ports.";
 export const MCP_ALLOWED_HOSTS_FLAG_CONSTRAINT =
-  "must list at least one non-empty host name or IP address, separated by commas.";
+  "must list at least one host name or IP address, separated by commas, without URL components or ports.";
 
 /** Comma-separated operator-declared Host/Origin names for a non-loopback bind. */
 export const mcpAllowedHostsTextSchema = z
@@ -44,15 +48,17 @@ export const mcpAllowedHostsTextSchema = z
       });
       return z.NEVER;
     }
-    return [...new Set(entries)];
-  });
+    return entries;
+  })
+  .pipe(z.array(mcpHttpHostnameSchema))
+  .transform((names) => [...new Set(names)]);
 
 /** Where the streamable HTTP listener binds. */
 export interface McpHttpEndpoint {
   readonly host: string;
   readonly port: number;
   /** Operator-declared Host/Origin names; required before a non-loopback bind serves. */
-  readonly allowedHosts?: readonly string[];
+  readonly allowedHosts?: readonly McpHttpHostname[];
 }
 
 /** Resolve the endpoint: explicit values, then MCP_HOST/MCP_PORT, then loopback defaults. */

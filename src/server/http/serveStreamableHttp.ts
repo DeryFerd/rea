@@ -16,8 +16,12 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { isIPv4, isIPv6, type AddressInfo } from "node:net";
+import { isIPv4, type AddressInfo } from "node:net";
 import type { Logger } from "pino";
+import {
+  normalizeMcpHttpHostname,
+  type McpHttpHostname,
+} from "../../config/mcpHttpHostname.js";
 
 import {
   toWebRequest,
@@ -25,7 +29,10 @@ import {
   writeWebResponse,
 } from "./nodeHttpBridge.js";
 import { listenHttpServer } from "./listenHttpServer.js";
-import { StreamableHttpListenError } from "./streamableHttpListenError.js";
+import {
+  StreamableHttpHostAllowlistError,
+  StreamableHttpListenError,
+} from "./streamableHttpListenError.js";
 import {
   NodeHttpRequestOwner,
   type HttpAdmissionLifetime,
@@ -48,7 +55,7 @@ export interface ServeStreamableHttpOptions {
   readonly host: string;
   readonly port: number;
   /** Operator-declared Host/Origin names; a non-loopback bind refuses to serve without them. */
-  readonly allowedHosts?: readonly string[];
+  readonly allowedHosts?: readonly McpHttpHostname[];
   /** Cancellation during listener startup; later shutdown remains owned by close(). */
   readonly signal?: AbortSignal;
   /** Called once; the instance serves every session in turn on a fresh transport. */
@@ -75,14 +82,6 @@ export interface StreamableHttpServer {
   readonly close: () => Promise<void>;
 }
 
-/** The bind host as the SDK compares Host headers: lowercase, IPv6 bracketed and canonical. */
-const normalizedHostname = (host: string): string | undefined => {
-  try {
-    return new URL(`http://${isIPv6(host) ? `[${host}]` : host}`).hostname;
-  } catch {
-    return undefined;
-  }
-};
 const isLoopbackIpv4 = (address: string): boolean =>
   isIPv4(address) && address.startsWith("127.");
 /** Classify the native bound IP; configured DNS names are not binding evidence. */
@@ -102,9 +101,9 @@ export const hostHeaderAllowlist = (
   host: string,
   boundAddress: string,
 ): string[] | undefined => {
-  const bound = normalizedHostname(boundAddress);
+  const bound = normalizeMcpHttpHostname(boundAddress);
   if (bound === undefined || !isLoopbackAddress(bound)) return undefined;
-  const names = [normalizedHostname(host), bound];
+  const names = [normalizeMcpHttpHostname(host), bound];
   const known = names.filter((name): name is string => name !== undefined);
   return [...new Set([...localhostAllowedHostnames(), ...known])];
 };
@@ -487,7 +486,7 @@ export const serveStreamableHttp = async (
       admissionLifetime: "response" as const,
     });
     if (stopped) return local(jsonError(503, -32000, "Server shutting down"));
-    // One loopback allowlist gates Host (DNS rebinding) and Origin (browser pages); a missing Origin passes.
+    // One resolved allowlist gates Host (DNS rebinding) and Origin (browser pages); a missing Origin passes.
     const refused =
       allowedHosts === undefined
         ? undefined
@@ -558,25 +557,13 @@ export const serveStreamableHttp = async (
     if (loopbackHosts !== undefined) {
       allowedHosts = loopbackHosts;
     } else {
-      // A non-loopback bind is remotely reachable, so Host (DNS rebinding) and
-      // Origin (browser pages) stay gated on operator-declared names only.
-      // Every declared name must parse; silently ignoring one would start the
-      // listener narrower than the operator asked and surface only as a
-      // client connection failure.
-      const declared: string[] = [];
-      for (const entry of options.allowedHosts ?? []) {
-        const name = normalizedHostname(entry);
-        if (name === undefined)
-          throw new Error(
-            `Refusing to serve ${bound.address} outside loopback with the invalid allowed host ${JSON.stringify(entry)} in MCP_ALLOWED_HOSTS (or --allowed-hosts); every entry must be a host name or IP address, then retry`,
-          );
-        if (!declared.includes(name)) declared.push(name);
-      }
-      if (declared.length === 0)
-        throw new Error(
-          `Refusing to serve ${bound.address} outside loopback without an operator-declared host allowlist; set MCP_ALLOWED_HOSTS (or --allowed-hosts) to every host name clients will use, then retry`,
-        );
-      allowedHosts = declared;
+      // Configuration supplies canonical names; the listener does not reinterpret them.
+      if (
+        options.allowedHosts === undefined ||
+        options.allowedHosts.length === 0
+      )
+        throw new StreamableHttpHostAllowlistError(bound.address);
+      allowedHosts = [...options.allowedHosts];
     }
   } catch (cause: unknown) {
     await prepareTransportShutdown().catch(() => undefined);
@@ -623,11 +610,6 @@ export const serveStreamableHttp = async (
     await close();
     throw options.signal.reason;
   }
-  if (allowedHosts === undefined)
-    logger?.warn(
-      { host },
-      "MCP HTTP Host header validation relaxed for a non-loopback bind",
-    );
   // The URL is the only way to reach an ephemeral port, so the announcement ignores the log threshold.
   logger
     ?.child({}, { level: "info" })

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseMcpHttpEndpoint } from "../../../src/config/mcpHttpEndpoint.js";
+import {
+  parseMcpHttpEndpoint,
+  mcpAllowedHostsTextSchema,
+} from "../../../src/config/mcpHttpEndpoint.js";
 import { projectAnalysisError } from "../../../src/domain/analysisErrorProjection.js";
 import { runMcpHttpEntrypoint } from "../../../src/main.js";
 import {
@@ -118,6 +121,54 @@ describe("MCP_HOST and MCP_PORT", () => {
 });
 
 describe("MCP_ALLOWED_HOSTS", () => {
+  it.each([
+    "not a host",
+    "127.0.0.1@evil.example",
+    "rea.lan/path",
+    "rea.lan\\path",
+    "rea.lan?query",
+    "rea.lan#fragment",
+    "rea.lan:80",
+    "https://rea.lan",
+    "rea.\tlan",
+    "rea.%6Can",
+  ])(
+    "rejects malformed hostname %j at both configuration inputs",
+    (invalidHost) => {
+      const endpoint = parseMcpHttpEndpoint({
+        MCP_HOST: "0.0.0.0",
+        MCP_ALLOWED_HOSTS: invalidHost,
+      });
+      expect(endpoint.ok).toBe(false);
+      if (endpoint.ok) throw new Error("Expected a configuration refusal");
+      expect(endpoint.error.settings.map(({ setting }) => setting)).toEqual([
+        "MCP_ALLOWED_HOSTS",
+      ]);
+      expect(
+        parseMcpHttpArguments(["--http", "--allowed-hosts", invalidHost]),
+      ).toMatchObject({
+        ok: false,
+        message: expect.stringContaining("without URL components or ports"),
+      });
+    },
+  );
+
+  it("passes canonical host identities downstream and deduplicates after normalization", () => {
+    expect(
+      parseMcpHttpEndpoint({
+        MCP_ALLOWED_HOSTS:
+          "REA.LAN,rea.lan,[0:0:0:0:0:0:0:1],::1,bücher.example",
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        host: "127.0.0.1",
+        port: 0,
+        allowedHosts: ["rea.lan", "[::1]", "xn--bcher-kva.example"],
+      },
+    });
+  });
+
   it("parses comma-separated allowlist text and lets an explicit value win", () => {
     expect(
       parseMcpHttpEndpoint({ MCP_ALLOWED_HOSTS: "rea.lan, 10.0.0.5" }),
@@ -132,7 +183,7 @@ describe("MCP_ALLOWED_HOSTS", () => {
     expect(
       parseMcpHttpEndpoint(
         { MCP_ALLOWED_HOSTS: "env.example" },
-        { allowedHosts: ["flag.example"] },
+        { allowedHosts: mcpAllowedHostsTextSchema.parse("flag.example") },
       ),
     ).toEqual({
       ok: true,
