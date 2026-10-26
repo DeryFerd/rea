@@ -346,13 +346,13 @@ it.each([
   expect(JSON.parse(response.body)).toEqual({ allowed: true });
 });
 
-it("gates a non-loopback bind on the operator allowlist", async () => {
+it("announces an admitted non-loopback URL and gates it on the operator allowlist", async () => {
   const { served } = await start({
     host: "0.0.0.0",
     allowedHosts: mcpAllowedHostsTextSchema.parse("127.0.0.1"),
   });
   const url = new URL(served.url);
-  url.hostname = "127.0.0.1";
+  expect(url.hostname).toBe("127.0.0.1");
   const { client } = await connect(url.toString());
   await expect(echo(client, "allowed")).resolves.toEqual([
     { type: "text", text: "allowed" },

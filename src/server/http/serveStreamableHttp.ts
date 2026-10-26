@@ -551,8 +551,7 @@ export const serveStreamableHttp = async (
   try {
     if (bound === null || typeof bound === "string")
       throw new TypeError("MCP HTTP listener has no TCP address");
-    url = endpointUrl(bound);
-    origin = new URL(url).origin;
+    const endpoint = new URL(endpointUrl(bound));
     const loopbackHosts = hostHeaderAllowlist(host, bound.address);
     if (loopbackHosts !== undefined) {
       allowedHosts = loopbackHosts;
@@ -565,6 +564,14 @@ export const serveStreamableHttp = async (
         throw new StreamableHttpHostAllowlistError(bound.address);
       allowedHosts = [...options.allowedHosts];
     }
+    const announcedHost = allowedHosts.includes(endpoint.hostname)
+      ? endpoint.hostname
+      : allowedHosts[0];
+    if (announcedHost === undefined)
+      throw new StreamableHttpHostAllowlistError(bound.address);
+    endpoint.hostname = announcedHost;
+    url = endpoint.href;
+    origin = endpoint.origin;
   } catch (cause: unknown) {
     await prepareTransportShutdown().catch(() => undefined);
     throw new StreamableHttpListenError(cause);
